@@ -34,6 +34,16 @@ This works fine in stable environments. The problem emerges during **node churn*
 
 This test suite proves that behavior empirically.
 
+### Moleculer Version History
+
+The `disableBalancer` option originally only affected `broker.call()` routing. Support for `broker.broadcast()` and `broker.emit()` to also work correctly with `disableBalancer=true` was added in:
+
+- **Issue:** [moleculerjs/moleculer#791](https://github.com/moleculerjs/moleculer/issues/791) — _"Event balancing does not work properly with disableBalancer: true"_
+- **PR:** [moleculerjs/moleculer#799](https://github.com/moleculerjs/moleculer/pull/799) — _"Fix event handling with disabled balancer"_
+- **Released in:** Moleculer **v0.14.10**
+
+This project uses Moleculer **v0.14.35**, which includes that fix and all subsequent improvements to transporter-level routing.
+
 ## How `disableBalancer` Changes Routing
 
 ### `disableBalancer: true` (default in this project)
@@ -485,8 +495,8 @@ The latency, duration, and subscription count tables below were extracted from t
 
 | Run | Mode | Total Time |
 |-----|------|------------|
-| Run 1 | `disableBalancer=true` (no flag) | **2 min 40s** |
-| Run 2 | `disableBalancer=false` (`--disable-false`) | **4 min 04s** — 52% slower |
+| Run 1 | `disableBalancer=true` (no flag) | **2 min 41s** |
+| Run 2 | `disableBalancer=false` (`--disable-false`) | **4 min 05s** — 52% slower |
 
 The extra ~84 seconds in Run 2 come almost entirely from the scale test phase, where timeouts to dead nodes add 15 seconds each.
 
@@ -494,19 +504,19 @@ The extra ~84 seconds in Run 2 come almost entirely from the scale test phase, w
 
 | Metric | `disableBalancer=true` | `disableBalancer=false` |
 |--------|----------------------|------------------------|
-| Retry warnings in log | **0** | **8** |
+| Retry warnings in log | **0** | **9** |
 | Timeout warnings in log | **0** | **4** (15s each) |
 
 With `disableBalancer=false`, the logs showed explicit Moleculer warnings like:
 
 ```
 WARN  BROKER: Request 'workers.process' is timed out.
-        { nodeID: 'sw-...-4gu0tj', timeout: 15000 }
+        { nodeID: 'sw-...-vaydb6', timeout: 15000 }
 WARN  BROKER: Retry to call 'workers.process' action after 500 ms...
         { attempts: 1 }
 ```
 
-Each timeout means a request was sent to a node-specific NATS subject (`MOL-demo.REQ.<nodeId>`) where no one was listening, because the target node had been killed but Moleculer's registry hadn't purged it yet. The request waited the full 15 seconds before timing out and triggering a retry.
+Each timeout means a request was sent to a node-specific NATS subject (`MOL-demo.REQ.<nodeId>`) where no one was listening, because the target node had been killed but Moleculer's registry hadn't purged it yet. The request waited the full 15 seconds before timing out and triggering a retry. Some requests hit two consecutive timeouts (attempts 1 and 2) when the retry also picked a stale node.
 
 With `disableBalancer=true`, there were **zero** retry or timeout warnings — NATS queue groups instantly routed around dead nodes.
 
@@ -516,9 +526,9 @@ With `disableBalancer=true`, there were **zero** retry or timeout warnings — N
 |--------|----------------------|------------------------|
 | Total calls | 85 | 85 |
 | Success rate | 100% | 100% |
-| Avg latency | 4ms | 4ms |
-| p95 latency | 7ms | 7ms |
-| **Max latency** | **10ms** | **12ms** |
+| Avg latency | 5ms | 5ms |
+| p95 latency | 10ms | 8ms |
+| **Max latency** | **12ms** | **10ms** |
 
 In the churn test (3 workers being restarted), both modes performed similarly because the churn workers are a subset of all available workers — the static baseline workers (`worker-a-1`, `worker-a-2`, `hybrid-1`) were always available to handle calls even if a churn worker was down.
 
@@ -529,10 +539,10 @@ In the churn test (3 workers being restarted), both modes performed similarly be
 | Total calls | 86 | 86 |
 | Success rate | 100% | 100% |
 | Avg latency | 3ms | 15ms |
-| p95 latency | 7ms | 7ms |
-| **Max latency** | **10ms** | **506ms** |
+| p95 latency | 6ms | 7ms |
+| **Max latency** | **10ms** | **507ms** |
 
-The max latency difference (10ms vs 506ms) reveals a single retry cycle. With `disableBalancer=false`, at least one call during rapid restarts was routed to a dead node, timed out partially, and retried — taking ~500ms instead of the normal ~3ms.
+The max latency difference (10ms vs 507ms) reveals a single retry cycle. With `disableBalancer=false`, at least one call during rapid restarts was routed to a dead node, timed out partially, and retried — taking ~500ms instead of the normal ~3ms.
 
 ### Scale Test Latency (B3: 10+10 Fleet with Kill/Restore Cycles)
 
@@ -540,15 +550,15 @@ This is where the difference is most dramatic:
 
 | Phase | `disableBalancer=true` | `disableBalancer=false` |
 |-------|----------------------|------------------------|
-| **Before churn** | avg=5ms, p95=8ms, max=8ms | avg=4ms, p95=6ms, max=8ms |
-| **During churn** | avg=4ms, p95=11ms, max=12ms | avg=2111ms, p95=15508ms, max=26775ms |
-| **After churn** | avg=4ms, p95=7ms, max=9ms | avg=4ms, p95=6ms, max=9ms |
+| **Before churn** | avg=5ms, p95=8ms, max=10ms | avg=4ms, p95=7ms, max=8ms |
+| **During churn** | avg=5ms, p95=8ms, max=8ms | avg=2132ms, p95=31509ms, max=31509ms |
+| **After churn** | avg=4ms, p95=6ms, max=7ms | avg=3ms, p95=4ms, max=6ms |
 
 Key observations:
 
 - **Before and after churn:** both modes perform identically (~4-5ms). There is no inherent overhead difference between the modes when all nodes are healthy.
-- **During churn with `disableBalancer=true`:** latency barely changes (4ms avg → 4ms avg). NATS removes dead subscriptions instantly, so calls never reach a dead node.
-- **During churn with `disableBalancer=false`:** avg latency explodes to **2,111ms** (a 528x increase) and p95 hits **15,508ms** (matching the 15-second `requestTimeout`). Some calls wait the full timeout and then retry, while others happen to pick a live node and complete fast — which is why the p50 stays at 5ms but the p95/max are enormous.
+- **During churn with `disableBalancer=true`:** latency barely changes (5ms avg → 5ms avg). NATS removes dead subscriptions instantly, so calls never reach a dead node.
+- **During churn with `disableBalancer=false`:** avg latency explodes to **2,132ms** (a 426x increase) and p95 hits **31,509ms** (two back-to-back 15-second timeouts). Some calls wait the full timeout, retry to another stale node, and timeout again, while others happen to pick a live node and complete fast — which is why the p50 stays at 6ms but the p95/max are enormous.
 
 ### Scale Test Duration
 
@@ -556,7 +566,7 @@ Key observations:
 |-------|----------------------|------------------------|
 | Scale test (start to finish) | **~39 seconds** | **~124 seconds** — 3.2x longer |
 
-The scale test is 3.2x slower with the balancer enabled because 4 requests hit 15-second timeouts (4 × 15s = 60s of pure waiting), plus retry delays.
+The scale test is 3.2x slower with the balancer enabled because 4 requests hit 15-second timeouts (some hitting two consecutive timeouts at 30s+), plus retry delays.
 
 ### NATS Subscription Counts
 
@@ -588,8 +598,12 @@ The real difference between modes is **latency and retries**, not pass/fail. The
 |--------|----------------------|------------------------|
 | Routing mechanism | NATS queue groups | Moleculer internal registry |
 | Dead node handling | Instant (subscription drop) | 15s timeout + retry |
-| Retries during churn | 0 | 8+ |
-| During-churn latency | ~4ms avg | ~2100ms avg |
-| Total script runtime | 2m 40s | 4m 04s |
+| Retries during churn | 0 | 9 |
+| During-churn latency | ~5ms avg | ~2132ms avg |
+| During-churn p95 | 8ms | 31,509ms |
+| Total script runtime | 2m 41s | 4m 05s |
+| Scale test duration | ~39s | ~124s (3.2x longer) |
 | NATS subscriptions | Higher (queue-group subjects) | Lower (node-targeted subjects) |
 | Call success rate | 100% | 100% (but via retries) |
+| H4 (local routing) | PASS (calls go through NATS) | FAIL (local short-circuit) |
+| Control experiment | N/A | ALL EXPECTATIONS MET |
