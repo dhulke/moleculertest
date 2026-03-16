@@ -1,0 +1,23 @@
+{
+  "name": "moleculer-nats-disablebalancer-demo",
+  "version": "1.0.0",
+  "description": "Discovery + Demo: Moleculer disableBalancer=true with NATS transporter",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "up": "./scripts/up.sh",
+    "down": "./scripts/down.sh",
+    "validate": "./scripts/validate.sh",
+    "demo": "./scripts/up.sh && ./scripts/validate.sh"
+  },
+  "dependencies": {
+    "moleculer": "^0.14.35",
+    "nats": "^2.28.2",
+    "uuid": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,247 @@
+x-moleculer-base: &moleculer-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: moleculer-demo:latest
+  volumes:
+    - ./output:/app/output
+  depends_on:
+    nats:
+      condition: service_started
+  environment:
+    NATS_URL: nats://nats:4222
+    NAMESPACE: demo
+    DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+  restart: "no"
+
+services:
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    command: >
+      -js
+      -m 8222
+      --name demo-nats
+      -T
+
+  # ── Baseline services (always started) ──
+
+  worker-a-1:
+    <<: *moleculer-base
+    container_name: worker-a-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: worker-a-1
+      NODE_ROLE: worker
+    command: ["node", "dist/app/workerNode.js"]
+
+  worker-a-2:
+    <<: *moleculer-base
+    container_name: worker-a-2
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: worker-a-2
+      NODE_ROLE: worker
+    command: ["node", "dist/app/workerNode.js"]
+
+  caller-1:
+    <<: *moleculer-base
+    container_name: caller-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: caller-1
+      NODE_ROLE: caller
+    command: ["node", "dist/app/callerNode.js"]
+
+  broadcaster-1:
+    <<: *moleculer-base
+    container_name: broadcaster-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: broadcaster-1
+      NODE_ROLE: broadcaster
+    command: ["node", "dist/app/broadcasterNode.js"]
+
+  listener-b-1:
+    <<: *moleculer-base
+    container_name: listener-b-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: listener-b-1
+      NODE_ROLE: listener
+    command: ["node", "dist/app/listenerNode.js"]
+
+  listener-c-1:
+    <<: *moleculer-base
+    container_name: listener-c-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: listener-c-1
+      NODE_ROLE: listener
+    command: ["node", "dist/app/listenerNode.js"]
+
+  listener-d-1:
+    <<: *moleculer-base
+    container_name: listener-d-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: listener-d-1
+      NODE_ROLE: listener
+    command: ["node", "dist/app/listenerNode.js"]
+
+  listener-e-1:
+    <<: *moleculer-base
+    container_name: listener-e-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: listener-e-1
+      NODE_ROLE: listener
+    command: ["node", "dist/app/listenerNode.js"]
+
+  hybrid-1:
+    <<: *moleculer-base
+    container_name: hybrid-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      NODE_ID: hybrid-1
+      NODE_ROLE: hybrid
+    command: ["node", "dist/app/hybridNode.js"]
+
+  # ── Churn services (profile: churn) ── dynamic node IDs on each restart
+
+  churn-worker-1:
+    <<: *moleculer-base
+    container_name: churn-worker-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: cw1
+      NODE_ROLE: churn-worker
+    command: ["node", "dist/app/workerNode.js"]
+    profiles: ["churn"]
+
+  churn-worker-2:
+    <<: *moleculer-base
+    container_name: churn-worker-2
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: cw2
+      NODE_ROLE: churn-worker
+    command: ["node", "dist/app/workerNode.js"]
+    profiles: ["churn"]
+
+  churn-worker-3:
+    <<: *moleculer-base
+    container_name: churn-worker-3
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: cw3
+      NODE_ROLE: churn-worker
+    command: ["node", "dist/app/workerNode.js"]
+    profiles: ["churn"]
+
+  churn-listener-1:
+    <<: *moleculer-base
+    container_name: churn-listener-1
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: cl1
+      NODE_ROLE: churn-listener
+    command: ["node", "dist/app/listenerNode.js"]
+    profiles: ["churn"]
+
+  churn-listener-2:
+    <<: *moleculer-base
+    container_name: churn-listener-2
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: cl2
+      NODE_ROLE: churn-listener
+    command: ["node", "dist/app/listenerNode.js"]
+    profiles: ["churn"]
+
+  churn-listener-3:
+    <<: *moleculer-base
+    container_name: churn-listener-3
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: cl3
+      NODE_ROLE: churn-listener
+    command: ["node", "dist/app/listenerNode.js"]
+    profiles: ["churn"]
+
+  churn-listener-4:
+    <<: *moleculer-base
+    container_name: churn-listener-4
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: cl4
+      NODE_ROLE: churn-listener
+    command: ["node", "dist/app/listenerNode.js"]
+    profiles: ["churn"]
+
+  # ── Scale services (profile: scale) ── use with --scale
+
+  scale-worker:
+    <<: *moleculer-base
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: sw
+      NODE_ROLE: scale-worker
+    command: ["node", "dist/app/workerNode.js"]
+    profiles: ["scale"]
+
+  scale-listener:
+    <<: *moleculer-base
+    environment:
+      NATS_URL: nats://nats:4222
+      NAMESPACE: demo
+      DISABLE_BALANCER: "${DISABLE_BALANCER:-true}"
+      DYNAMIC_NODE_ID: "true"
+      NODE_ID_PREFIX: sl
+      NODE_ROLE: scale-listener
+    command: ["node", "dist/app/listenerNode.js"]
+    profiles: ["scale"]
