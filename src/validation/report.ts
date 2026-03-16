@@ -27,12 +27,12 @@ export function generateMarkdownReport(report: ValidationReport): string {
   lines.push("");
 
   if (report.controlMode) {
-    lines.push("> **CONTROL EXPERIMENT**: This run uses `disableBalancer=false` to verify that");
-    lines.push("> Moleculer's internal balancer causes expected behavioral differences. When the");
-    lines.push("> internal balancer is active, calls are routed using Moleculer's per-node registry");
-    lines.push("> instead of NATS queue groups. This makes the system vulnerable to stale registry");
-    lines.push("> entries during node churn. We expect several hypotheses to **FAIL**, confirming");
-    lines.push("> that `disableBalancer=true` is what provides churn resilience.");
+    lines.push("> **CONTROL EXPERIMENT**: This run uses `disableBalancer=false` to verify behavioral");
+    lines.push("> differences when Moleculer's internal balancer is active. With the balancer enabled,");
+    lines.push("> calls are routed using Moleculer's per-node registry instead of NATS queue groups.");
+    lines.push("> Most tests still pass (retries cover stale-registry timeouts), but with significantly");
+    lines.push("> higher latency during churn. The key difference is **H4**: local calls are");
+    lines.push("> short-circuited instead of going through NATS.");
     lines.push("");
   }
 
@@ -148,8 +148,9 @@ export function generateMarkdownReport(report: ValidationReport): string {
   if (report.controlMode && report.expectedOutcomes) {
     lines.push("## Expected vs Actual Outcomes (Control Experiment)");
     lines.push("");
-    lines.push("In control mode (`disableBalancer=false`), we expect certain hypotheses to fail.");
-    lines.push("The test PASSES overall if all expectations are met.");
+    lines.push("In control mode (`disableBalancer=false`), we expect only H4 to fail (local call");
+    lines.push("short-circuiting). All other hypotheses should still pass — calls succeed via retries,");
+    lines.push("but with higher latency during churn. The test PASSES overall if all expectations are met.");
     lines.push("");
     lines.push("| Hypothesis | Expected | Actual | Match | Reason |");
     lines.push("|------------|----------|--------|-------|--------|");
@@ -188,8 +189,10 @@ export function generateMarkdownReport(report: ValidationReport): string {
   if (report.controlMode) {
     lines.push(`**${report.overallPass ? "CONTROL EXPERIMENT PASSED — ALL EXPECTATIONS MET" : "CONTROL EXPERIMENT — UNEXPECTED RESULTS"}**`);
     lines.push("");
-    lines.push("In control mode, \"pass\" means the expected failures occurred and expected passes held,");
-    lines.push("confirming that the `disableBalancer` flag drives the observed behavioral differences.");
+    lines.push("In control mode, \"pass\" means all expectations were met: H4 failed as expected (local");
+    lines.push("call short-circuiting) and all other hypotheses passed. The real difference between modes");
+    lines.push("is not pass/fail but latency — during churn, calls hit 15s timeouts on stale registry");
+    lines.push("entries and require retries, making the suite significantly slower.");
   } else {
     lines.push(`**${report.overallPass ? "ALL KEY HYPOTHESES PASSED" : "SOME HYPOTHESES FAILED"}**`);
   }

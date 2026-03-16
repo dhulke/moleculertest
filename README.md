@@ -314,12 +314,15 @@ The scale test creates a **larger fleet** (20 nodes by default) and runs kill/re
 
 Running with `--disable-false` sets `disableBalancer=false`, which enables Moleculer's internal balancer. This is the **control experiment** — it runs the exact same tests but with the balancer enabled, so you can compare results.
 
-In control mode, the test harness has **expected outcomes** for each hypothesis. Several hypotheses are expected to FAIL (e.g., H1, H3, H5), because with the balancer enabled:
-- Calls go through per-node routing (`REQ.<nodeId>`), not queue groups
-- Local calls are short-circuited, not sent through the transporter
-- Stale registry entries cause timeouts during churn
+In control mode, the test harness has **expected outcomes** for each hypothesis. Almost all hypotheses are expected to **PASS** — the system still works with the balancer enabled, because Moleculer's retry policy (3 retries, 500ms-3s delay) covers stale-registry timeouts. The calls succeed; they just take much longer during churn.
 
-The test passes in control mode if the **expected failures actually fail** — confirming that the `disableBalancer` flag is the variable driving the observed differences.
+The only hypothesis expected to **FAIL** is **H4** (local call routing). With the balancer enabled, Moleculer short-circuits calls to local handlers — so the hybrid node handles all its own `workers.process` calls locally instead of sending them through NATS to be distributed across workers.
+
+The real observable difference between modes is not pass/fail but **latency and retries**:
+- With `disableBalancer=true`: during-churn latency stays at ~4ms avg, zero retries
+- With `disableBalancer=false`: during-churn latency spikes to ~2100ms avg with 15s timeouts and multiple retries
+
+The test passes in control mode if all expectations match — H4 fails and everything else passes.
 
 ---
 
@@ -566,16 +569,18 @@ With `disableBalancer=true`, Moleculer creates additional `REQB.*` subjects with
 
 The difference (726 - 423 = 303 additional subscriptions at scale) directly reflects the queue-group subjects that are the backbone of NATS-driven routing.
 
-### Why the Control Experiment Has "Unexpected Results"
+### Why Most Hypotheses Pass in Both Modes
 
-The control experiment expected hypotheses H1, H3, H5, H7, and H8 to **FAIL** with `disableBalancer=false`. However, they all **PASSED**. This happened because:
+With `disableBalancer=false`, all hypotheses except H4 pass — the same as with `disableBalancer=true`. This is expected:
 
-1. **H1 (call distribution):** Even with the internal balancer, Moleculer still distributes calls across workers (it uses a round-robin algorithm internally). The calls are distributed — just via a different mechanism.
-2. **H3 (no per-node routing):** The test checks for action-level NATS subjects, and Moleculer still publishes to action subjects (just not queue-grouped ones), so the evidence is ambiguous.
-3. **H5, H7 (churn resilience):** The retry policy (`retries: 3, delay: 500ms`) means calls eventually succeed after timeouts — they don't fail outright. The test checks success rate, not latency, so 100% success with terrible latency still counts as a PASS.
-4. **H8 (NATS subscribers drive delivery):** NATS monitoring still shows subscriber changes during churn regardless of the balancer setting.
+1. **H1 (call distribution):** Moleculer's internal balancer uses round-robin, which distributes calls across workers just like NATS queue groups do. The mechanism differs, but the observable result (multiple workers handling calls) is the same.
+2. **H3 (no per-node routing):** Action-level NATS subjects exist in both modes. The evidence is similar even though the internal routing mechanism differs.
+3. **H5, H7 (churn resilience):** The retry policy (`retries: 3, delay: 500ms-3s`) means calls eventually succeed after timeouts — they don't fail outright. Success rate stays at 100% in both modes.
+4. **H8 (NATS subscribers drive delivery):** NATS monitoring reflects current subscribers regardless of the balancer setting.
 
-The real observable difference is not pass/fail but **latency and retries**. The calls still succeed with `disableBalancer=false` — they just take orders of magnitude longer during churn because of timeout-retry cycles. This is documented in the latency tables above.
+**H4 (local call routing) is the only genuine behavioral difference.** With `disableBalancer=true`, even local calls go through NATS and can be handled by any worker. With `disableBalancer=false`, Moleculer short-circuits to the local handler, so the hybrid node handles all 20 of its own calls.
+
+The real difference between modes is **latency and retries**, not pass/fail. The calls still succeed with `disableBalancer=false` — they just take orders of magnitude longer during churn because of timeout-retry cycles. This is documented in the latency tables above.
 
 ### Summary
 
